@@ -99,17 +99,35 @@ def fit_routine(da, node):
     y = da.difference.data[0]
 
     try:
-        sign_changes = np.sign(y)
-        crossings = np.where(np.diff(sign_changes) != 0)[0]
-        assert len(crossings) == 2, "Expected exactly two sign change points in the data."
-        flux_delay = x[(crossings[1] + crossings[0]) // 2]
+        # Smooth to suppress noise before detecting sign changes (~10% of sweep width)
+        smooth_win = max(5, len(y) // 16)
+        kernel = np.ones(smooth_win) / smooth_win
+        y_smooth = np.convolve(y.astype(float), kernel, mode="same")
+
+        sign_smooth = np.sign(y_smooth)
+        crossings = np.where(np.diff(sign_smooth) != 0)[0]
+
+        if len(crossings) >= 2:
+            # Pick the crossing pair that brackets the largest (absolute) peak
+            peak_idx = int(np.argmax(np.abs(y_smooth)))
+            before = crossings[crossings < peak_idx]
+            after = crossings[crossings >= peak_idx]
+            if len(before) > 0 and len(after) > 0:
+                c1, c2 = int(before[-1]), int(after[0])
+            else:
+                # No pair brackets the peak — use the two outermost crossings
+                c1, c2 = int(crossings[0]), int(crossings[-1])
+            flux_delay = int(round(float(x[(c1 + c2) // 2])))
+        else:
+            # Fewer than 2 crossings: fall back to the peak of the smoothed signal
+            flux_delay = int(round(float(x[np.argmax(y_smooth)])))
+
         da = da.assign(flux_delay=flux_delay)
         da = da.assign(success=True)
 
-    except AssertionError as e:
+    except Exception as e:
         print(f"Error processing {da.qubit.data}: {e}")
-        flux_delay = 0
-        da = da.assign(flux_delay=flux_delay)
+        da = da.assign(flux_delay=0)
         da = da.assign(success=False)
         return da
 
