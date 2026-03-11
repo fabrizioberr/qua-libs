@@ -25,6 +25,7 @@ from calibration_utils.iq_blobs.plotting import plot_iq_blobs, plot_confusion_ma
 from qualibration_libs.parameters import get_qubits
 from qualibration_libs.runtime import simulate_and_plot
 from qualibration_libs.data import XarrayDataFetcher
+from calibration_utils.node_utils import get_node_id_label
 
 
 # %% {Description}
@@ -216,6 +217,8 @@ def plot_data(node: QualibrationNode[Parameters, Quam]):
     fig_confusion = plot_confusion_matrices(
         node.results["ds_raw"], node.namespace["qubits"], node.results["ds_iq_blobs"]
     )
+    for fig in (fig_raw_fit, fig_iq, fig_confusion):
+        fig.suptitle(f"Node ID: {get_node_id_label(node)}", fontsize=10, y=1.01)
     plt.show()
     # Store the generated figures
     node.results["figures"] = {

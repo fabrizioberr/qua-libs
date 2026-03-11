@@ -21,6 +21,8 @@ from qualibration_libs.data import XarrayDataFetcher
 from qualibration_libs.parameters import get_qubits
 from qualibration_libs.runtime import simulate_and_plot
 from quam_config import Quam
+import matplotlib.pyplot as plt
+from calibration_utils.node_utils import get_node_id_label
 
 # %% {Node_parameters}
 description = """
@@ -322,6 +324,8 @@ def plot_data(node: QualibrationNode[Parameters, Quam]):
     """
 
     fig_flux = plot_fit(node.results["ds_fit"], node.namespace["qubits"], fits=node.results["ds_fit"])
+    #fig_flux.suptitle(f"Node ID: {get_node_id_label(node)}", fontsize=10, y=1.01)
+    #plt.show()
 
     node.results["figure_flux"] = fig_flux
 

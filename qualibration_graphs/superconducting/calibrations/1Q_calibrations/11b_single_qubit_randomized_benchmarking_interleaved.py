@@ -27,6 +27,7 @@ from calibration_utils.single_qubit_randomized_benchmarking import (
 from qualibration_libs.parameters import get_qubits
 from qualibration_libs.runtime import simulate_and_plot
 from qualibration_libs.data import XarrayDataFetcher
+from calibration_utils.node_utils import get_node_id_label
 
 
 # %% {Node initialisation}
@@ -365,6 +366,7 @@ def plot_data(node: QualibrationNode[Parameters, Quam]):
     fig_raw_fit = plot_raw_data_with_fit(node.results["ds_raw"], node.namespace["qubits"], node.results["ds_fit"])
     fig_raw_fit.suptitle(
         f"Single qubit randomized benchmarking interleaved with {node.parameters.interleaved_gate_operation}"
+        f"\nNode ID: {get_node_id_label(node)}"
     )
     plt.show()
     # Store the generated figures

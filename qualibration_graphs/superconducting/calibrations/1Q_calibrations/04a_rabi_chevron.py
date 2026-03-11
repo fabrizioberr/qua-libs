@@ -25,6 +25,7 @@ from qualibration_libs.parameters import get_qubits
 from qualibration_libs.runtime import simulate_and_plot
 from qualibration_libs.data import XarrayDataFetcher
 from qualibration_libs.core import tracked_updates
+from calibration_utils.node_utils import get_node_id_label
 
 
 # %% {Description}
@@ -229,6 +230,7 @@ def analyse_data(node: QualibrationNode[Parameters, Quam]):
 def plot_data(node: QualibrationNode[Parameters, Quam]):
     """Plot the raw and fitted data in specific figures whose shape is given by qubit.grid_location."""
     fig_raw_fit = plot_raw_data_with_fit(node.results["ds_raw"], node.namespace["qubits"], node.results["ds_fit"])
+    fig_raw_fit.suptitle(f"Node ID: {get_node_id_label(node)}", fontsize=10, y=1.01)
     plt.show()
     # Store the generated figures
     node.results["figures"] = {

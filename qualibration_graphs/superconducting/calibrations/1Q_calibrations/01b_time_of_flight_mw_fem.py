@@ -25,6 +25,7 @@ from qualibration_libs.parameters import get_qubits
 from qualibration_libs.runtime import simulate_and_plot
 from qualibration_libs.data import XarrayDataFetcher
 from qualibration_libs.core import tracked_updates
+from calibration_utils.node_utils import get_node_id_label
 
 description = """
         TIME OF FLIGHT - MW FEM
@@ -205,6 +206,8 @@ def plot_data(node: QualibrationNode[Parameters, Quam]):
     fig_averaged_run_fit = plot_averaged_run_with_fit(
         node.results["ds_raw"], node.namespace["qubits"], node.results["ds_fit"]
     )
+    for fig in (fig_single_run_fit, fig_averaged_run_fit):
+        fig.suptitle(f"Node ID: {get_node_id_label(node)}", fontsize=10, y=1.01)
     plt.show()
     # Store the generated figures
     node.results["figures"] = {

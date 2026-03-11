@@ -22,6 +22,7 @@ from qualibration_libs.data import XarrayDataFetcher
 from qualibration_libs.parameters import get_qubits
 from qualibration_libs.runtime import simulate_and_plot
 from quam_config import Quam
+from calibration_utils.node_utils import get_node_id_label
 
 # %% {Description}
 description = """
@@ -250,6 +251,8 @@ def plot_data(node: QualibrationNode[Parameters, Quam]):
     """
     fig_iq = plot_iq_blobs(node.results["ds_raw"], node.namespace["qubits"], node.results["ds_fit"])
     fig_confusion = plot_confusion_matrices(node.results["ds_raw"], node.namespace["qubits"], node.results["ds_fit"])
+    for fig in (fig_iq, fig_confusion):
+        fig.suptitle(f"Node ID: {get_node_id_label(node)}", fontsize=10, y=1.01)
     plt.show()
     # Store the generated figures
     node.results["figures"] = {

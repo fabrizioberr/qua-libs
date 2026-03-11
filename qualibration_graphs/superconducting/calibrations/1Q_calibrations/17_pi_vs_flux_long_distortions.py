@@ -20,6 +20,8 @@ from qualibration_libs.data import XarrayDataFetcher
 from qualibration_libs.parameters import get_qubits
 from qualibration_libs.runtime import simulate_and_plot
 from quam_config import Quam
+from calibration_utils.node_utils import get_node_id_label
+
 
 description = """
 Long cryoscope (π vs flux) calibration.
@@ -294,6 +296,8 @@ def plot_results(node: QualibrationNode[Parameters, Quam]):
     ds = node.results["ds_proc"]
     qubits = node.namespace.get("qubits", get_qubits(node))
     fig = plot_fit(ds, qubits, node.results["fit_results"])
+    _nid = get_node_id_label(node)
+    fig.suptitle(f"Node ID: {_nid}", fontsize=10, y=1.01)
     plt.show()
     node.results["fitted_data"] = fig
 
@@ -325,6 +329,8 @@ def plot_raw_spectrogram(node: QualibrationNode[Parameters, Quam]):
         ax.set_xlabel("Time (µs)")
         ax.set_ylabel("Detuning (MHz)")
         ax.set_title(f"{q.name} — Raw spectrogram")
+    _nid = get_node_id_label(node)
+    fig.suptitle(f"Node ID: {_nid}", fontsize=10)
     fig.tight_layout()
     plt.show()
     node.results["fig_raw_spectrogram"] = fig
@@ -391,6 +397,8 @@ sian-fitted peak positions overlaid (red dots).
         ax2_log.set_title("log scale", fontsize=7)
         ax2_log.grid(True)
 
+    _nid = get_node_id_label(node)
+    fig.suptitle(f"Node ID: {_nid}", fontsize=10)
     fig.tight_layout()
     plt.show()
     node.results["fig_center_freqs"] = fig
