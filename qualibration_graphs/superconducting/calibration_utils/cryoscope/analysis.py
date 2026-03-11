@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import List, Literal, Optional, Tuple
 
 import matplotlib.pylab as plt
 import numpy as np
@@ -7,8 +7,10 @@ import xarray as xr
 from qualibrate import QualibrationNode
 from qualibration_libs.analysis import fit_oscillation, unwrap_phase
 from qualibration_libs.data import convert_IQ_to_V
+from scipy import linalg
+from scipy.interpolate import interp1d
 from scipy.optimize import curve_fit, minimize
-from scipy.signal import deconvolve, savgol_filter
+from scipy.signal import deconvolve, lfilter, savgol_filter
 
 
 def savgol(da, dim, range=3, order=2):
@@ -537,3 +539,570 @@ def optimize_start_fractions(t, y, start_fractions, bounds_scale=0.5, fixed_taus
         print("Optimized components [(a1, tau1), (a2, tau2)...]:")
         print(components)
     return result.success, best_fractions, components, a_dc, best_rms
+
+
+# ===========================================================================
+# Short-time cryoscope: FIR analysis utilities
+# (ported from iqcc_calibration_tools/analysis/cryoscope_tools.py)
+# ===========================================================================
+
+
+def conv_causal(v: np.ndarray, h: np.ndarray, N: Optional[int] = None) -> np.ndarray:
+    """Perform a causal (one-sided) convolution of signal v with filter h.
+
+    Parameters
+    ----------
+    v : array-like
+        Input sequence.
+    h : array-like
+        Filter coefficients.
+    N : int or None
+        Number of output points. If None, returns up to len(v) samples.
+
+    Returns
+    -------
+    y : ndarray
+        Result of causal convolution truncated to N (or len(v)) samples.
+    """
+    v = np.asarray(v, dtype=float)
+    h = np.asarray(h, dtype=float)
+    y = np.convolve(v, h, mode="full")
+    return y[: (len(v) if N is None else N)]
+
+
+def build_toeplitz_matrix(v: np.ndarray, L: int) -> np.ndarray:
+    """Build a Toeplitz convolution matrix from input sequence v.
+
+    Parameters
+    ----------
+    v : array-like
+        Input sequence.
+    L : int
+        Number of filter taps.
+
+    Returns
+    -------
+    V : ndarray, shape (len(v), L)
+        Toeplitz matrix such that V @ h ≈ conv(v, h)[:len(v)].
+    """
+    v = np.asarray(v, float)
+    return linalg.toeplitz(c=v, r=np.concatenate([[v[0]], np.zeros(L - 1)]))
+
+
+def resample_to_target_rate(
+    data: np.ndarray,
+    original_Ts: float,
+    target_Ts: float,
+    kind: str = "cubic",
+) -> np.ndarray:
+    """Resample time-domain data to a new sampling interval.
+
+    Parameters
+    ----------
+    data : array-like
+        Original time-domain samples.
+    original_Ts : float
+        Original sampling interval (ns).
+    target_Ts : float
+        Target sampling interval (ns).
+    kind : str
+        Interpolation kind ('linear', 'cubic', etc.).
+
+    Returns
+    -------
+    resampled : ndarray
+    """
+    data = np.asarray(data)
+    N = len(data)
+    t_original = np.arange(N) * original_Ts
+    max_time = t_original[-1]
+    num_samples = int(np.floor(max_time / target_Ts)) + 1
+    t_target = np.arange(num_samples) * target_Ts
+    t_target = t_target[t_target <= max_time]
+    interp_fun = interp1d(t_original, data, kind=kind, fill_value="extrapolate", bounds_error=False)
+    return interp_fun(t_target)
+
+
+def fit_fir(
+    phi: np.ndarray,
+    v: np.ndarray,
+    L: int,
+    Ts: float = 0.5,
+    lam1: float = 1e-2,
+    lam2: float = 1e-2,
+    tail_ns: Optional[float] = None,
+) -> np.ndarray:
+    """Fit FIR filter coefficients h such that phi ≈ Toeplitz(v) @ h.
+
+    Tikhonov regularisation with an identity term (lam1) and an
+    exponential-tail term (lam2) is applied for stability.
+
+    Parameters
+    ----------
+    phi : array-like
+        Measured response signal.
+    v : array-like
+        Input (ideal step) signal.
+    L : int
+        FIR filter length.
+    Ts : float
+        Sampling interval (ns).
+    lam1, lam2 : float
+        Regularisation parameters.
+    tail_ns : float or None
+        Exponential tail time constant. Defaults to (L*Ts)/3.
+
+    Returns
+    -------
+    h : ndarray, shape (L,)
+        Fitted FIR coefficients.
+    """
+    phi = np.asarray(phi, float)
+    v = np.asarray(v, float)
+    V = build_toeplitz_matrix(v, L)
+    if tail_ns is None:
+        tail_ns = (L * Ts) / 3.0
+    idx = np.arange(L)
+    x = np.exp(idx * Ts / tail_ns)
+    A = V.T @ V + lam1 * np.eye(L) + lam2 * np.diag(x)
+    b = V.T @ phi
+    h = linalg.solve(A, b, assume_a="pos")
+    return h
+
+
+def optimize_fir_parameters(
+    response: np.ndarray,
+    Ts: float = 0.5,
+    L_values: List[int] = None,
+    lam1_values: List[float] = None,
+    lam2_values: List[float] = None,
+) -> Tuple[list, float, Optional[dict], Optional[np.ndarray], Optional[np.ndarray]]:
+    """Grid-search over (L, lam1, lam2) to minimise FIR reconstruction error.
+
+    Parameters
+    ----------
+    response : array-like
+        Measured (distorted) response to model (normalised amplitude).
+    Ts : float
+        Sampling interval (ns).
+    L_values, lam1_values, lam2_values : lists
+        Search grids for filter length and regularisation parameters.
+
+    Returns
+    -------
+    results : list of dicts
+    best_error : float
+    best_params : dict or None
+    best_h : ndarray or None
+    best_reconstructed : ndarray or None
+    """
+    if L_values is None:
+        L_values = [16, 20, 24, 28, 32, 40, 48]
+    if lam1_values is None:
+        lam1_values = [1e-5, 1e-4, 1e-3, 1e-2, 1e-1]
+    if lam2_values is None:
+        lam2_values = [1e-5, 1e-4, 1e-3, 1e-2, 1e-1]
+
+    ideal_response = np.ones(len(response))
+    results = []
+    best_error = float("inf")
+    best_params = None
+    best_h = None
+    best_reconstructed = None
+
+    for L in L_values:
+        for lam1 in lam1_values:
+            for lam2 in lam2_values:
+                try:
+                    h = fit_fir(response, ideal_response, L=L, Ts=Ts, lam1=lam1, lam2=lam2)
+                    h /= np.sum(h)
+                    V = build_toeplitz_matrix(ideal_response, L)
+                    reconstructed = V @ h
+                    reconstruction_error = np.linalg.norm(response - reconstructed) / np.linalg.norm(response)
+                    result = {
+                        "L": L,
+                        "lam1": lam1,
+                        "lam2": lam2,
+                        "error": reconstruction_error,
+                        "h": h.copy(),
+                        "reconstructed": reconstructed.copy(),
+                    }
+                    results.append(result)
+                    if reconstruction_error < best_error:
+                        best_error = reconstruction_error
+                        best_params = result
+                        best_h = h.copy()
+                        best_reconstructed = reconstructed.copy()
+                except Exception as e:
+                    print(f"Warning: FIR fit failed for L={L}, lam1={lam1:.0e}, lam2={lam2:.0e}: {e}")
+
+    return results, best_error, best_params, best_h, best_reconstructed
+
+
+def invert_fir(
+    h: np.ndarray,
+    Ts: float = 0.5,
+    M: Optional[int] = None,
+    method: Literal["optimization", "analytical"] = "optimization",
+    sigma_ns: float = 0.75,
+    lam_smooth: float = 5e-2,
+    normalize_dc_gain: bool = False,
+) -> np.ndarray:
+    """Compute an approximate causal FIR inverse of h.
+
+    Solves:  min_{h_inv} || d - conv(h, h_inv) ||^2 + lam_smooth * ||Δ h_inv||^2
+
+    Parameters
+    ----------
+    h : array-like
+        Forward FIR coefficients.
+    Ts : float
+        Sampling interval (ns).
+    M : int or None
+        Length of the inverse filter. Defaults to len(h).
+    method : 'optimization' or 'analytical'
+    sigma_ns : float
+        Standard deviation of the target Gaussian approximating a causal delta.
+    lam_smooth : float
+        First-difference smoothing regularisation weight.
+    normalize_dc_gain : bool
+        Whether to normalise the composite DC gain of h * h_inv to 1.
+
+    Returns
+    -------
+    h_inv : ndarray, shape (M,)
+    """
+    h = np.asarray(h, float)
+    L = len(h)
+    if M is None:
+        M = L
+
+    if method == "optimization":
+        t = np.arange(M) * Ts
+        d = np.exp(-0.5 * (t / sigma_ns) ** 2)
+        d /= d.sum()
+        h_padded = np.pad(h, (0, max(0, M - L)), mode="constant")
+        H = build_toeplitz_matrix(h_padded, M)[:M, :]
+        D = np.eye(M, k=0) - np.eye(M, k=1)
+        D = D[:-1, :]
+        A = H.T @ H + lam_smooth * (D.T @ D)
+        b = H.T @ d
+        h_inv = linalg.solve(A, b, assume_a="pos")
+        if normalize_dc_gain:
+            gain = h.sum() * h_inv.sum()
+            if gain != 0:
+                h_inv /= gain
+    else:  # analytical
+        h_inv = np.zeros(M)
+        h_inv[0] = 1.0 / h[0]
+        for m in range(1, min(L, M)):
+            s = sum(h_inv[m - i] * h[i] for i in range(1, min(m + 1, L)))
+            h_inv[m] = -s / h[0]
+
+    return h_inv
+
+
+def analyze_and_plot_inverse_fir(
+    response: np.ndarray,
+    time: np.ndarray,
+    Ts: float = 0.5,
+    L_values: Optional[List[int]] = None,
+    lam1_values: Optional[List[float]] = None,
+    lam2_values: Optional[List[float]] = None,
+    M: Optional[int] = None,
+    sigma_ns: float = 0.75,
+    lam_smooth: float = 5e-2,
+    method: Literal["optimization", "analytical"] = "optimization",
+    verbose: bool = True,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, "plt.Figure", "plt.Figure"]:
+    """Full short-time cryoscope FIR pipeline: fit forward FIR then compute its inverse.
+
+    Runs a grid search for the best forward FIR (h) that reconstructs *response*
+    from the ideal step, then computes a causal inverse FIR (h_inv) such that
+    pre-distorting with h_inv and then experiencing h returns a flat response.
+
+    Parameters
+    ----------
+    response : array-like
+        Normalised flux step response (length N).
+    time : array-like
+        Corresponding time axis (ns).
+    Ts : float
+        Sampling interval (ns, typically 0.5 for 2 GS/s data).
+    L_values, lam1_values, lam2_values : list or None
+        Grid-search ranges passed to :func:`optimize_fir_parameters`.
+    M : int or None
+        Length of the inverse FIR. If None, matches length of best h.
+    sigma_ns, lam_smooth : float
+        Parameters for :func:`invert_fir`.
+    method : 'optimization' or 'analytical'
+    verbose : bool
+
+    Returns
+    -------
+    best_h : ndarray
+        Best forward FIR coefficients.
+    h_inv : ndarray
+        Inverse FIR coefficients (to load onto the OPX).
+    best_reconstructed : ndarray
+        Reconstructed response using best_h.
+    fig_fir_fit : Figure
+        FIR fitting summary figure.
+    fig_inv : Figure
+        Inverse FIR and correction summary figure.
+    """
+    if L_values is None:
+        L_values = [16, 20, 24, 28, 32, 40, 48]
+    if lam1_values is None:
+        lam1_values = [1e-5, 1e-4, 1e-3, 1e-2, 1e-1]
+    if lam2_values is None:
+        lam2_values = [1e-5, 1e-4, 1e-3, 1e-2, 1e-1]
+
+    response = np.asarray(response, float)
+    time = np.asarray(time, float)
+
+    # --- Step 1: optimise forward FIR ---
+    results, best_error, best_params, best_h, best_reconstructed = optimize_fir_parameters(
+        response, Ts=Ts, L_values=L_values, lam1_values=lam1_values, lam2_values=lam2_values
+    )
+
+    if verbose and best_params is not None:
+        print(f"Best FIR: L={best_params['L']}, lam1={best_params['lam1']:.0e}, "
+              f"lam2={best_params['lam2']:.0e}, error={best_error:.4e}")
+
+    # --- FIR fit figure ---
+    fig_fir_fit, axes = plt.subplots(2, 2, figsize=(14, 8))
+    ax = axes[0, 0]
+    ax.plot(time, response, "r-", label="Measured", linewidth=2, alpha=0.7)
+    if best_reconstructed is not None:
+        ax.plot(time, best_reconstructed, "b--", label=f"Reconstructed (err={best_error:.3e})", linewidth=2)
+    ax.set_xlabel("Time (ns)")
+    ax.set_ylabel("Amplitude")
+    ax.set_title("Best FIR Reconstruction")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+
+    ax = axes[0, 1]
+    if best_reconstructed is not None:
+        residual = response - best_reconstructed
+        ax.plot(time, residual, "m-", linewidth=1.5)
+        ax.fill_between(time, -np.std(residual), np.std(residual), alpha=0.2, color="gray")
+    ax.axhline(0, color="k", linestyle="--", alpha=0.3)
+    ax.set_xlabel("Time (ns)")
+    ax.set_title("Residual")
+    ax.grid(True, alpha=0.3)
+
+    ax = axes[1, 0]
+    if best_h is not None:
+        ax.plot(best_h, "b-o", markersize=4, linewidth=2)
+    ax.set_xlabel("Tap index")
+    ax.set_title(f"Forward FIR (L={best_params['L'] if best_params else '?'})")
+    ax.grid(True, alpha=0.3)
+
+    ax = axes[1, 1]
+    errors_by_L: dict = {}
+    for r in results:
+        errors_by_L.setdefault(r["L"], []).append(r["error"])
+    L_sorted = sorted(errors_by_L.keys())
+    ax.errorbar(
+        L_sorted,
+        [np.mean(errors_by_L[L]) for L in L_sorted],
+        yerr=[np.std(errors_by_L[L]) for L in L_sorted],
+        fmt="o-", capsize=5, linewidth=2,
+    )
+    if best_error < float("inf"):
+        ax.axhline(best_error, color="r", linestyle="--", alpha=0.5, label=f"Best: {best_error:.3e}")
+    ax.set_xlabel("Filter length L")
+    ax.set_ylabel("Reconstruction error")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    fig_fir_fit.tight_layout()
+
+    # --- Step 2: compute inverse FIR ---
+    h_inv = invert_fir(best_h, Ts=Ts, M=M, method=method, sigma_ns=sigma_ns, lam_smooth=lam_smooth)
+
+    # Simulate correction: predistort ideal signal, then apply forward distortion
+    ideal_response = np.ones(len(response))
+    L_guard = len(h_inv)
+    guard = np.zeros(L_guard)
+    ideal_padded = np.concatenate([guard, ideal_response, guard])
+    predistorted_padded = conv_causal(ideal_padded, h_inv)
+    predistorted_response = predistorted_padded[L_guard : L_guard + len(ideal_response)]
+    corrected_response = conv_causal(predistorted_response, best_h, N=len(ideal_response))
+
+    correction_error = np.linalg.norm(corrected_response - ideal_response) / np.linalg.norm(ideal_response)
+    if verbose:
+        print(f"Correction error (NRMS): {correction_error:.3e}")
+
+    delta = conv_causal(best_h, h_inv, N=len(best_h))
+
+    # --- Inverse FIR figure ---
+    fig_inv, axes2 = plt.subplots(2, 2, figsize=(14, 8))
+    ax = axes2[0, 0]
+    ax.plot(time, ideal_response, "g--", label="Ideal", linewidth=2, alpha=0.7)
+    ax.plot(time, response, "r-", label="Distorted", linewidth=2)
+    if best_reconstructed is not None:
+        ax.plot(time, best_reconstructed, "b:", label="Predicted (FIR)", linewidth=2, alpha=0.7)
+    ax.axhline(1.001, color="gray", linestyle="--", linewidth=1, alpha=0.7)
+    ax.axhline(0.999, color="gray", linestyle="--", linewidth=1, alpha=0.7)
+    ax.set_ylim([0.95, 1.05])
+    ax.set_xlabel("Time (ns)")
+    ax.set_title("Signals and FIR prediction")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+
+    ax = axes2[0, 1]
+    ax.plot(best_h, "b-o", label="Forward FIR (h)", markersize=4, linewidth=2)
+    ax.plot(h_inv, "r-s", label="Inverse FIR (h_inv)", markersize=4, linewidth=2)
+    ax.set_xlabel("Tap index")
+    ax.set_title("FIR filters")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+
+    ax = axes2[1, 0]
+    ax.plot(time, ideal_response, "g--", label="Ideal", linewidth=2, alpha=0.7)
+    ax.plot(time, corrected_response, "m-", label="Corrected (sim)", linewidth=2)
+    ax.axhline(1.001, color="gray", linestyle="--", linewidth=1, alpha=0.7)
+    ax.axhline(0.999, color="gray", linestyle="--", linewidth=1, alpha=0.7)
+    ax.set_ylim([0.95, 1.05])
+    ax.set_xlabel("Time (ns)")
+    ax.set_title("Predicted correction")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+
+    ax = axes2[1, 1]
+    t_delta = np.arange(len(delta)) * Ts
+    ax.plot(t_delta, delta, "g-o", markersize=4, linewidth=2)
+    ax.axhline(0, color="k", linestyle="--", alpha=0.3)
+    ax.set_xlabel("Time (ns)")
+    ax.set_title(f"h * h_inv (≈ δ, peak={np.max(np.abs(delta)):.3e})")
+    ax.grid(True, alpha=0.3)
+
+    fig_inv.tight_layout()
+
+    return best_h, h_inv, best_reconstructed, fig_fir_fit, fig_inv
+
+
+# ===========================================================================
+# Short-time cryoscope: raw-data → phase → frequency → flux pipeline
+# ===========================================================================
+
+
+def extract_short_time_phase(ds: xr.Dataset) -> xr.Dataset:
+    """Fit a sine wave to state vs. frame data at each time step to extract phase.
+
+    Parameters
+    ----------
+    ds : xr.Dataset
+        Dataset containing a ``state`` variable with dimensions
+        ``(qubit, time, frame)``.
+
+    Returns
+    -------
+    xr.Dataset
+        Input dataset with a new ``phase`` coordinate of shape (qubit, time).
+    """
+
+    def sine_fit(x, phase, A, offset):
+        return A * np.sin(2 * np.pi * x + phase) + offset
+
+    phases = []
+    for q_idx in range(len(ds.qubit)):
+        phase_q = []
+        for t_idx in range(len(ds.time)):
+            y_data = ds.state.isel(qubit=q_idx, time=t_idx).values
+            x_data = ds.frame.values
+            try:
+                popt, _ = curve_fit(
+                    sine_fit,
+                    x_data,
+                    y_data,
+                    p0=[0, 0.5, 0.5],
+                    bounds=([-np.pi, 0, -np.inf], [np.pi, np.inf, np.inf]),
+                )
+                phase_q.append(popt[0])
+            except RuntimeError:
+                phase_q.append(0.0)
+        phases.append(np.unwrap(phase_q))
+
+    return ds.assign_coords(phase=(["qubit", "time"], phases))
+
+
+def extract_short_time_freqs(ds: xr.Dataset, detuning_MHz: float) -> xr.Dataset:
+    """Compute qubit frequency shift at each time step via the gradient of the phase.
+
+    Parameters
+    ----------
+    ds : xr.Dataset
+        Dataset with a ``phase`` coordinate (rad) of shape (qubit, time).
+    detuning_MHz : float
+        Cryoscope detuning used for the experiment (MHz). This is added back
+        to the numerical derivative to recover the instantaneous frequency.
+
+    Returns
+    -------
+    xr.Dataset
+        Input dataset with a new ``frequencies`` coordinate (MHz) of shape
+        (qubit, time).
+    """
+
+    def calc_freq(phase_values, time_values):
+        dphase_dt = np.gradient(phase_values, time_values, axis=-1)
+        return dphase_dt / (2 * np.pi) + detuning_MHz / 1e3  # GHz
+
+    freqs = xr.apply_ufunc(
+        calc_freq,
+        ds.phase,
+        ds.time,
+        input_core_dims=[["time"], ["time"]],
+        output_core_dims=[["time"]],
+        vectorize=True,
+    )
+    return ds.assign_coords(frequencies=1e3 * freqs)  # store in MHz
+
+
+def extract_short_time_flux(ds: xr.Dataset, qubits) -> xr.Dataset:
+    """Convert frequency shift to flux amplitude using the qubit's quadratic term.
+
+    Parameters
+    ----------
+    ds : xr.Dataset
+        Dataset with a ``frequencies`` coordinate (MHz) of shape (qubit, time).
+    qubits : list of QUAM qubit objects
+        Qubits whose ``freq_vs_flux_01_quad_term`` is used for the conversion.
+
+    Returns
+    -------
+    xr.Dataset
+        Input dataset with a new ``flux`` coordinate (V) of shape (qubit, time).
+    """
+    fluxes = []
+    for qubit in qubits:
+        freq_MHz = ds.sel(qubit=qubit.name).frequencies.values
+        fluxes.append(np.sqrt(np.abs(-1e6 * freq_MHz / qubit.freq_vs_flux_01_quad_term)))
+    return ds.assign_coords(flux=(["qubit", "time"], fluxes))
+
+
+def process_raw_dataset_short_time(ds: xr.Dataset, node: QualibrationNode) -> xr.Dataset:
+    """Extract phase, frequency, and flux from a short-time cryoscope raw dataset.
+
+    Wraps :func:`extract_short_time_phase`, :func:`extract_short_time_freqs`,
+    and :func:`extract_short_time_flux` into a single call.
+
+    Parameters
+    ----------
+    ds : xr.Dataset
+        Raw dataset with ``state`` variable of shape (qubit, time, frame).
+    node : QualibrationNode
+        Node providing ``parameters.detuning_target_in_MHz`` and the qubit list
+        via ``node.namespace["qubits"]``.
+
+    Returns
+    -------
+    xr.Dataset
+        Enriched dataset with ``phase``, ``frequencies``, and ``flux`` coords.
+    """
+    ds = extract_short_time_phase(ds)
+    ds = extract_short_time_freqs(ds, node.parameters.detuning_target_in_MHz)
+    ds = extract_short_time_flux(ds, node.namespace["qubits"])
+    return ds
