@@ -23,7 +23,7 @@ def plot_raw_data_with_fit(
     n_pairs = len(qubit_pairs)
     cols = min(4, n_pairs)
     rows = (n_pairs + cols - 1) // cols
-    fig, axes = plt.subplots(2 * rows, cols, figsize=(4 * cols, 3.5 * rows * 2), squeeze=False)
+    fig, axes = plt.subplots(2 * rows, cols, figsize=(2.67 * cols, 2.33 * rows * 2), squeeze=False)
     axes = axes.flatten()
 
     for i, qp in enumerate(qubit_pairs):

@@ -2,6 +2,7 @@
 from dataclasses import asdict
 
 import matplotlib.pyplot as plt
+plt.style.use("sans_style_ppt")
 import numpy as np
 import xarray as xr
 from calibration_utils.xyx_delay import (
@@ -131,7 +132,8 @@ def create_qua_program(node: QualibrationNode[Parameters, Quam]):
         for multiplexed_qubits in qubits.batch():
             # Initialize the QPU in terms of flux points (flux tunable transmons and/or tunable couplers)
             for qubit in multiplexed_qubits.values():
-                node.machine.initialize_qpu(target=qubit)
+                if qubit.z is not None:
+                    node.machine.initialize_qpu(target=qubit)
             align()  # Ensure all elements start aligned before the averaging loop
 
             # --- Averaging loop
@@ -283,3 +285,4 @@ def update_state(node: QualibrationNode[Parameters, Quam]):
 @node.run_action()
 def save_results(node: QualibrationNode[Parameters, Quam]):
     node.save()
+

@@ -2,6 +2,7 @@
 from dataclasses import asdict
 
 import matplotlib.pyplot as plt
+plt.style.use("sans_style_ppt")
 import numpy as np
 import xarray as xr
 from calibration_utils.chevron_cz import (

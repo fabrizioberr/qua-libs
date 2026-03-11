@@ -12,7 +12,7 @@ def plot_raw_data_with_fit(ds_raw: xr.Dataset, qubit_pairs: Quam, ds_fit: xr.Dat
     """
     n_pairs = len(qubit_pairs)
 
-    fig, axes = plt.subplots(1, n_pairs, figsize=(5 * n_pairs, 4))
+    fig, axes = plt.subplots(1, n_pairs, figsize=(3.33 * n_pairs, 2.67))
     if n_pairs == 1:
         axes = [axes]
 

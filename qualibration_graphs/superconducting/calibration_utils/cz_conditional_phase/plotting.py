@@ -31,7 +31,7 @@ def plot_raw_data_with_fit(
     cols = min(4, n_pairs)  # Max 4 columns
     rows = (n_pairs + cols - 1) // cols  # Ceiling division
 
-    fig, axes = plt.subplots(2 * rows, cols, figsize=(4 * cols, 4 * rows * 2), squeeze=False)
+    fig, axes = plt.subplots(2 * rows, cols, figsize=(2.67 * cols, 2.67 * rows * 2), squeeze=False)
     axes = axes.flatten()
 
     for i, qp in enumerate(qubit_pairs):

@@ -38,7 +38,7 @@ def plot_raw_data_with_fit(ds: xr.Dataset, qubits: List[AnyTransmon], fits: xr.D
         plot_individual_data_with(ax, ds, qubit, fits.sel(qubit=qubit["qubit"]))
 
     grid.fig.suptitle("Rabi chevron")
-    grid.fig.set_size_inches(15, 9)
+    grid.fig.set_size_inches(10, 6)
     grid.fig.tight_layout()
     return grid.fig
 

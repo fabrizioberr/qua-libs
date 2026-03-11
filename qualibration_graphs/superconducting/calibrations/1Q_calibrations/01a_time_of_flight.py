@@ -1,5 +1,6 @@
 # %% {Imports}
 import matplotlib.pyplot as plt
+plt.style.use("sans_style_ppt")
 import numpy as np
 import xarray as xr
 from dataclasses import asdict

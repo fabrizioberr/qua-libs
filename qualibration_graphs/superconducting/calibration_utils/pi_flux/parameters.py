@@ -1,7 +1,7 @@
 from typing import List, Literal, Optional
 
 from qualibrate import NodeParameters
-from qualibrate.parameters import RunnableParameters
+from qualibrate.core.parameters import RunnableParameters
 from qualibration_libs.parameters import CommonNodeParameters, QubitsExperimentNodeParameters
 
 
@@ -14,17 +14,17 @@ class NodeSpecificParameters(RunnableParameters):
     """Operation to excite the qubit"""
     operation_amplitude_factor: float = 1.0
     """Amplitude factor for the operation."""
-    duration_in_ns: int = 8000
+    duration_in_ns: int = 100000
     """Maximum duration of the sequence."""
     time_axis: Literal["linear", "log"] = "log"
     """Time axis for the operation."""
-    time_step_in_ns: int = 48
+    time_step_in_ns: int = 4
     """Time step in nanoseconds. For linear time axis."""
-    time_step_num: int = 100
+    time_step_num: int = 300
     """Number of time steps. Used for log time axis."""
-    min_wait_time_in_ns: int = 32
+    min_wait_time_in_ns: int = 16
     """Minimum wait time in nanoseconds."""
-    frequency_span_in_mhz: float = 200
+    frequency_span_in_mhz: float = 100
     """Frequency span in MHz for the qubit spectroscopy tone"""
     frequency_step_in_mhz: float = 1
     """Frequency step in MHz for the qubit spectroscopy tone"""

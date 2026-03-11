@@ -141,8 +141,8 @@ for k, qubit in enumerate(machine.qubits.values()):
 # Note that the "coupled" ports O1 & I1, O2 & O3, O4 & O5, O6 & O7, and O8 & I2 must be in the same band.
 
 # Qubit drive frequencies
-xy_freq = np.array([6.012, 6.421, 6.785, 7.001, 7.083, 7.121, 7.184, 7.254]) * u.GHz
-xy_LO = np.array([6.0, 6.1, 6.5, 6.8, 7.1, 7.1, 7.1, 7.1]) * u.GHz
+xy_freq = np.array([6.012, 6.421, 6.785]) * u.GHz
+xy_LO = np.array([6.0, 6.1, 6.5]) * u.GHz
 xy_if = xy_freq - xy_LO  # The intermediate frequency is inferred from the LO and qubit frequencies
 assert np.all(np.abs(xy_if) < 400 * u.MHz), (
     "The xy intermediate frequency must be within [-400; 400] MHz. \n"
@@ -151,7 +151,7 @@ assert np.all(np.abs(xy_if) < 400 * u.MHz), (
     f"Qubit drive IF frequencies: {xy_if} \n"
 )
 # Transmon anharmonicity
-anharmonicity = np.array([150, 200, 175, 310, 214, 198, 179, 235]) * u.MHz
+anharmonicity = np.array([150, 200, 175]) * u.MHz
 
 # Desired output power in dBm
 drive_power = -10
@@ -234,7 +234,7 @@ for k, q in enumerate(machine.qubits):
 # This is the case when tunable couplers have been defined in generate_quam.py.
 
 # If pairs are not defined:
-qubit_pairs = [("1", "2"), ("2", "3"), ("3", "4"), ("4", "5"), ("5", "6"), ("6", "7"), ("7", "8")]
+qubit_pairs = [("1", "2"), ("2", "3")]
 
 # If pairs are already defined, comment the previous line and uncomment the following one:
 # qubit_pairs = machine.qubit_pairs

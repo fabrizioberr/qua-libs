@@ -88,7 +88,7 @@ def plot_individual_fit(t_data: np.ndarray, y_data: np.ndarray, components: List
         y_fit += amp * np.exp(-t_data / tau)
         fit_text += f"a{i + 1} = {amp / a_dc:.3f}, τ{i + 1} = {tau:.0f}ns\n"
 
-    fig, axs = plt.subplots(1, 2, figsize=(12, 5))
+    fig, axs = plt.subplots(1, 2, figsize=(8, 3.33))
 
     # First subplot - linear scale
     axs[0].plot(t_data, y_data, ".--", label="Data")

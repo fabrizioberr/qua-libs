@@ -3,6 +3,7 @@ import dataclasses
 from dataclasses import asdict
 
 import matplotlib.pyplot as plt
+plt.style.use("sans_style_ppt")
 import numpy as np
 import xarray as xr
 from calibration_utils.power_rabi import (
@@ -114,7 +115,8 @@ def create_qua_program(node: QualibrationNode[EfParameters, Quam]):
         for multiplexed_qubits in qubits.batch():
             # Initialize the QPU in terms of flux points (flux tunable transmons and/or tunable couplers)
             for qubit in multiplexed_qubits.values():
-                node.machine.initialize_qpu(target=qubit)
+                if qubit.z is not None:
+                    node.machine.initialize_qpu(target=qubit)
                 qubit.resonator.update_frequency(
                     qubit.resonator.intermediate_frequency
                     + (qubit.resonator.GEF_frequency_shift if node.parameters.use_state_discrimination else qubit.chi)

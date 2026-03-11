@@ -1,6 +1,7 @@
 # %% {Imports}
 from dataclasses import asdict
 import matplotlib.pyplot as plt
+plt.style.use("sans_style_ppt")
 from qualang_tools.multi_user import qm_session
 from qualibrate import QualibrationNode
 from quam_config import Quam

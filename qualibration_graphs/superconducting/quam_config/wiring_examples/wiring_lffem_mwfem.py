@@ -1,3 +1,4 @@
+# %%
 import matplotlib.pyplot as plt
 from qualang_tools.wirer.wirer.channel_specs import *
 from qualang_tools.wirer import Instruments, Connectivity, allocate_wiring, visualize

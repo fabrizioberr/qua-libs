@@ -43,7 +43,7 @@ def plot_raw_phase(ds: xr.Dataset, qubits: List[AnyTransmon]) -> Figure:
         ds.assign_coords(detuning_MHz=ds.detuning / u.MHz).loc[qubit].phase.plot(ax=ax2, x="detuning_MHz")
         ax2.set_xlabel("Detuning [MHz]")
     grid.fig.suptitle("Resonator spectroscopy (phase)")
-    grid.fig.set_size_inches(15, 9)
+    grid.fig.set_size_inches(10, 6)
     grid.fig.tight_layout()
 
     return grid.fig
@@ -77,7 +77,7 @@ def plot_raw_amplitude_with_fit(ds: xr.Dataset, qubits: List[AnyTransmon], fits:
         plot_individual_amplitude_with_fit(ax, ds, qubit, fits.sel(qubit=qubit["qubit"]))
 
     grid.fig.suptitle("Resonator spectroscopy (amplitude + fit)")
-    grid.fig.set_size_inches(15, 9)
+    grid.fig.set_size_inches(10, 6)
     grid.fig.tight_layout()
     return grid.fig
 

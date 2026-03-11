@@ -35,7 +35,7 @@ def plot_raw_data_with_fit(ds: xr.Dataset, qubit_pairs: List[AnyTransmon], fits:
     - The function creates a grid of subplots, one for each qubit.
     - Each subplot contains the raw data and the fitted curve.
     """
-    fig, axs = plt.subplots(nrows=len(qubit_pairs), ncols=1, figsize=(15, 9))
+    fig, axs = plt.subplots(nrows=len(qubit_pairs), ncols=1, figsize=(10, 6))
     for ii, qp in enumerate(qubit_pairs):
         ax = axs[ii] if len(qubit_pairs) > 1 else axs
 
@@ -49,7 +49,7 @@ def plot_raw_data_with_fit(ds: xr.Dataset, qubit_pairs: List[AnyTransmon], fits:
         plot_individual_data_with(ax, ds, qp.id, fit_data)
 
     fig.suptitle("CZ Chevron")
-    fig.set_size_inches(15, 9)
+    fig.set_size_inches(10, 6)
     fig.tight_layout()
 
     return fig

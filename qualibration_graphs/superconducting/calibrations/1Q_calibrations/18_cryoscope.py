@@ -140,7 +140,8 @@ def create_qua_program(node: QualibrationNode[Parameters, Quam]):
 
         # Initialize the QPU in terms of flux points (flux tunable transmons and/or tunable couplers)
 
-        node.machine.initialize_qpu(target=qubit)
+        if qubit.z is not None:
+            node.machine.initialize_qpu(target=qubit)
         align()
 
         # Outer loop for averaging

@@ -56,41 +56,97 @@ def fit_gaussian(freqs, states):
         return float("nan")
 
 
-def extract_center_freqs_state(ds: xr.Dataset, freqs: np.ndarray) -> xr.DataArray:
-    """Extract center frequencies from state discrimination dataset as a DataArray.
+def _smooth_1d(values: np.ndarray, window: int) -> np.ndarray:
+    if window <= 1 or values.size == 0:
+        return values.astype(float, copy=True)
+    kernel = np.ones(window, dtype=float) / float(window)
+    return np.convolve(values, kernel, mode="same")
 
-    Ensures we operate on the 'state' DataArray (not the whole Dataset) so apply_ufunc
-    returns a DataArray, avoiding assignment errors downstream.
-    """
-    freq_dim = "detuning" if "detuning" in ds.dims else "freq"
-    state_da = ds["state"].transpose("qubit", "time", freq_dim)
-    center_freqs = xr.apply_ufunc(
-        lambda states: fit_gaussian(freqs, states),
-        state_da,
-        input_core_dims=[[freq_dim]],
-        output_core_dims=[[]],
-        vectorize=True,
-        dask="parallelized",
-        output_dtypes=[float],
+
+def _smooth_2d(data: np.ndarray, freq_window: int = 5, time_window: int = 7) -> np.ndarray:
+    smoothed = np.apply_along_axis(_smooth_1d, 0, np.asarray(data, dtype=float), freq_window)
+    smoothed = np.apply_along_axis(_smooth_1d, 1, smoothed, time_window)
+    return smoothed
+
+
+def _weighted_local_center(freqs: np.ndarray, spectrum: np.ndarray, center_idx: int, half_window: int = 2) -> float:
+    lo = max(0, center_idx - half_window)
+    hi = min(len(freqs), center_idx + half_window + 1)
+    local_freqs = freqs[lo:hi]
+    local_vals = np.asarray(spectrum[lo:hi], dtype=float)
+    baseline = np.nanmedian(local_vals)
+    weights = np.clip(local_vals - baseline, 0.0, None)
+    if not np.isfinite(weights).any() or np.nansum(weights) <= 0:
+        return float(freqs[center_idx])
+    return float(np.nansum(local_freqs * weights) / np.nansum(weights))
+
+
+def _track_bright_ridge(freqs: np.ndarray, spectrogram: np.ndarray) -> np.ndarray:
+    data = np.asarray(spectrogram, dtype=float)
+    if data.ndim != 2:
+        raise ValueError("spectrogram must be 2D with shape (detuning, time)")
+
+    if not np.isfinite(data).any():
+        return np.full(data.shape[1], np.nan)
+
+    smoothed = _smooth_2d(np.nan_to_num(data, nan=np.nanmedian(data)), freq_window=5, time_window=7)
+    baseline = np.nanmedian(smoothed, axis=0, keepdims=True)
+    spread = np.nanmedian(np.abs(smoothed - baseline), axis=0, keepdims=True)
+    normalized = (smoothed - baseline) / np.maximum(spread, 1e-12)
+    score = np.clip(normalized, 0.0, None)
+
+    if np.nanmax(score) <= 0:
+        return np.array([fit_gaussian(freqs, data[:, idx]) for idx in range(data.shape[1])], dtype=float)
+
+    n_freqs, n_times = score.shape
+    dp = np.full((n_freqs, n_times), -np.inf, dtype=float)
+    back_ptr = np.zeros((n_freqs, n_times), dtype=int)
+    dp[:, 0] = score[:, 0]
+
+    freq_step = float(np.median(np.abs(np.diff(freqs)))) if len(freqs) > 1 else 1.0
+    max_jump_hz = max(3.0 * freq_step, 1.0)
+    jump_penalty = 0.35 / (max_jump_hz**2)
+
+    for time_idx in range(1, n_times):
+        prev_scores = dp[:, time_idx - 1]
+        for freq_idx, freq in enumerate(freqs):
+            penalties = jump_penalty * (freq - freqs) ** 2
+            transition_scores = prev_scores - penalties
+            best_prev = int(np.argmax(transition_scores))
+            dp[freq_idx, time_idx] = score[freq_idx, time_idx] + transition_scores[best_prev]
+            back_ptr[freq_idx, time_idx] = best_prev
+
+    ridge_indices = np.zeros(n_times, dtype=int)
+    ridge_indices[-1] = int(np.argmax(dp[:, -1]))
+    for time_idx in range(n_times - 1, 0, -1):
+        ridge_indices[time_idx - 1] = back_ptr[ridge_indices[time_idx], time_idx]
+
+    refined = np.array(
+        [
+            _weighted_local_center(freqs, data[:, time_idx], ridge_indices[time_idx], half_window=2)
+            for time_idx in range(n_times)
+        ],
+        dtype=float,
     )
-    return center_freqs.rename("center_frequency")
+    return refined
+
+
+def _extract_center_freqs_by_ridge(ds: xr.Dataset, data_var: str, freqs: np.ndarray) -> xr.DataArray:
+    stacked = ds[data_var].transpose("qubit", "detuning", "time")
+    centers = np.array([_track_bright_ridge(freqs, stacked.sel(qubit=qubit).values) for qubit in stacked.qubit.values])
+    return xr.DataArray(centers, coords={"qubit": stacked.qubit.values, "time": stacked.time.values}, dims=["qubit", "time"])
+
+
+def extract_center_freqs_state(ds: xr.Dataset, freqs: np.ndarray) -> xr.DataArray:
+    return _extract_center_freqs_by_ridge(ds, "state", freqs).rename("center_frequency")
 
 
 def extract_center_freqs_iq(ds: xr.Dataset, freqs: np.ndarray) -> xr.DataArray:
     iq_data = ds["IQ_abs"] if "IQ_abs" in ds.data_vars else ds.get("I", None)
     if iq_data is None:
         raise ValueError("Dataset is missing IQ_abs and I data variables for IQ analysis")
-    stacked = iq_data.transpose("qubit", "time", "detuning")
-    center_freqs = xr.apply_ufunc(
-        lambda iq_slice: fit_gaussian(freqs, iq_slice),
-        stacked,
-        input_core_dims=[["detuning"]],
-        output_core_dims=[[]],
-        vectorize=True,
-        dask="parallelized",
-        output_dtypes=[float],
-    )
-    return center_freqs
+    data_var = "IQ_abs" if "IQ_abs" in ds.data_vars else "I"
+    return _extract_center_freqs_by_ridge(ds, data_var, freqs)
 
 
 def single_exp_decay(t, amp, tau):

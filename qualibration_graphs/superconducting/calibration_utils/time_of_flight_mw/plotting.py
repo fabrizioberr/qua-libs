@@ -38,7 +38,7 @@ def plot_single_run_with_fit(ds: xr.Dataset, qubits: List[AnyTransmon], fits: xr
         plot_individual_single_run_with_fit(ax, ds, qubit, fits.sel(qubit=qubit["qubit"]))
 
     grid.fig.suptitle("Single run")
-    grid.fig.set_size_inches(15, 9)
+    grid.fig.set_size_inches(10, 6)
     grid.fig.legend(loc="upper right", ncols=4, bbox_to_anchor=(0.5, 1.35))
     grid.fig.tight_layout()
     return grid.fig
@@ -72,7 +72,7 @@ def plot_averaged_run_with_fit(ds: xr.Dataset, qubits: List[AnyTransmon], fits: 
         plot_individual_averaged_run_with_fit(ax, ds, qubit, fits.sel(qubit=qubit["qubit"]))
 
     grid.fig.suptitle("Averaged run")
-    grid.fig.set_size_inches(15, 9)
+    grid.fig.set_size_inches(10, 6)
     grid.fig.legend(loc="upper right", ncols=4, bbox_to_anchor=(0.5, 1.35))
     grid.fig.tight_layout()
     return grid.fig

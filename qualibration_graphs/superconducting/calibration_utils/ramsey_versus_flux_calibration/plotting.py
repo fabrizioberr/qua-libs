@@ -40,7 +40,7 @@ def plot_raw_data_with_fit(ds: xr.Dataset, qubits: List[AnyTransmon], fits: xr.D
         plot_individual_data_with_fit(ax, ds, qubit, fits.sel(qubit=qubit["qubit"]))
 
     grid.fig.suptitle("Ramsey vs flux")
-    grid.fig.set_size_inches(15, 9)
+    grid.fig.set_size_inches(10, 6)
     grid.fig.tight_layout()
     return grid.fig
 
@@ -73,7 +73,7 @@ def plot_parabolas_with_fit(ds: xr.Dataset, qubits: List[AnyTransmon], fits: xr.
         plot_individual_parabolas_with_fit(ax, ds, qubit, fits.sel(qubit=qubit["qubit"]))
 
     grid.fig.suptitle("Ramsey vs flux frequency ")
-    grid.fig.set_size_inches(15, 9)
+    grid.fig.set_size_inches(10, 6)
     grid.fig.tight_layout()
     return grid.fig
 

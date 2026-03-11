@@ -42,7 +42,7 @@ def plot_iq_blobs(ds: xr.Dataset, qubits: List[AnyTransmon], fits: xr.Dataset):
     leg.legend_handles[0].set_markersize(6)
     leg.legend_handles[1].set_markersize(6)
     grid.fig.suptitle("g.s. and e.s. discriminators (rotated)")
-    grid.fig.set_size_inches(15, 9)
+    grid.fig.set_size_inches(10, 6)
     grid.fig.tight_layout()
     return grid.fig
 
@@ -147,7 +147,7 @@ def plot_confusion_matrices(ds: xr.Dataset, qubits: List[AnyTransmon], fits: xr.
         plot_individual_confusion_matrix(ax, ds, qubit, fits.sel(qubit=qubit["qubit"]))
 
     grid.fig.suptitle("g.s., e.s. and f.s. fidelity")
-    grid.fig.set_size_inches(15, 9)
+    grid.fig.set_size_inches(10, 6)
     grid.fig.tight_layout()
     return grid.fig
 

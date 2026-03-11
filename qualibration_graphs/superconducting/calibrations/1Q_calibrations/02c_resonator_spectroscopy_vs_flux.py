@@ -1,5 +1,6 @@
 # %% {Imports}
 import matplotlib.pyplot as plt
+plt.style.use("sans_style_ppt")
 import numpy as np
 import xarray as xr
 from dataclasses import asdict
@@ -66,7 +67,11 @@ node = QualibrationNode[Parameters, Quam](
 def custom_param(node: QualibrationNode[Parameters, Quam]):
     """Allow the user to locally set the node parameters for debugging purposes, or execution in the Python IDE."""
     # You can get type hinting in your IDE by typing node.parameters.
-    # node.parameters.qubits = ["q1", "q2"]
+    #node.parameters.qubits = ["q1", "q2"]
+    
+    
+    
+    
     pass
 
 
@@ -115,7 +120,8 @@ def create_qua_program(node: QualibrationNode[Parameters, Quam]):
         for multiplexed_qubits in qubits.batch():
             # Initialize the QPU in terms of flux points (flux tunable transmons and/or tunable couplers)
             for qubit in multiplexed_qubits.values():
-                node.machine.initialize_qpu(target=qubit)
+                if qubit.z is not None:
+                    node.machine.initialize_qpu(target=qubit)
             align()
 
             with for_(n, 0, n < n_avg, n + 1):

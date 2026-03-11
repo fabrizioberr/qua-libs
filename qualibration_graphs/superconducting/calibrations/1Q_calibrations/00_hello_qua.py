@@ -64,7 +64,8 @@ def create_qua_program(node: QualibrationNode[Parameters, Quam]):
         for multiplexed_qubits in qubits.batch():
             # Initialize the QPU in terms of flux points (flux tunable transmons and/or tunable couplers)
             for qubit in multiplexed_qubits.values():
-                node.machine.initialize_qpu(target=qubit)
+                if qubit.z is not None:
+                    node.machine.initialize_qpu(target=qubit)
                 qubit.xy.update_frequency(0)
             align()
 
