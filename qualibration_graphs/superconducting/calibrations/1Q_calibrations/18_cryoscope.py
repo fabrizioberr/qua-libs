@@ -83,8 +83,10 @@ node = QualibrationNode[Parameters, Quam](
 def custom_param(node: QualibrationNode[Parameters, Quam]):
     """Allow the user to locally set the node parameters for debugging purposes, or execution in the Python IDE."""
     # You can get type hinting in your IDE by typing node.parameters.
-    # node.parameters.qubits = ["q1"]
-    pass
+    node.parameters.qubits = ["q3"]
+    #num of averages
+    node.parameters.num_shots = 1000
+    node.parameters.update_state = True
 
 
 # Instantiate the QUAM class from the state file
@@ -324,8 +326,8 @@ def plot_data(node: QualibrationNode[Parameters, Quam]):
     """
 
     fig_flux = plot_fit(node.results["ds_fit"], node.namespace["qubits"], fits=node.results["ds_fit"])
-    #fig_flux.suptitle(f"Node ID: {get_node_id_label(node)}", fontsize=10, y=1.01)
-    #plt.show()
+    fig_flux.suptitle(f"Node ID: {get_node_id_label(node)}", fontsize=10, y=1.01)
+    plt.show()
 
     node.results["figure_flux"] = fig_flux
 
@@ -340,14 +342,11 @@ def update_state(node: QualibrationNode[Parameters, Quam]):
         for q in node.namespace["qubits"]:
             if node.outcomes[q.name] == "failed":
                 continue
-
-        components = node.results["fit_results"][q.name]["components"]
-        a_dc = node.results["fit_results"][q.name]["a_dc"]
-        A_list = [amp / a_dc for amp, _ in components]
-        tau_list = [tau for _, tau in components]
-        node.machine.qubits[q.name].z.opx_output.exponential_filter.extend(list(zip(A_list, tau_list)))
-
-
+            components = node.results["fit_results"][q.name]["components"]
+            a_dc = node.results["fit_results"][q.name]["a_dc"]
+            A_list = [amp / a_dc for amp, _ in components]
+            tau_list = [tau for _, tau in components]
+            node.machine.qubits[q.name].z.opx_output.exponential_filter.extend(list(zip(A_list, tau_list)))
 # %% {Save_results}
 @node.run_action()
 def save_results(node: QualibrationNode[Parameters, Quam]):

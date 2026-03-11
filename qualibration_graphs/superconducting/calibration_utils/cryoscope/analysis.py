@@ -159,7 +159,7 @@ def fit_raw_data(ds: xr.Dataset, node: QualibrationNode):
         time_vals, flux_vals, fitting_start_fractions
     )
 
-    ds_fit.attrs["fit_success"] = success
+    ds_fit.attrs["fit_success"] = int(success)
     if components is not None:
         try:
             amps = [float(a) for a, _ in components]
