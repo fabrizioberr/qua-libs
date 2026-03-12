@@ -9,7 +9,7 @@ from qualibration_libs.parameters import CommonNodeParameters, QubitsExperimentN
 class NodeSpecificParameters(RunnableParameters):
     num_shots: int = 100
     """Number of averages to perform. Default is 50."""
-    zeros_before_after_pulse: int = 80
+    zeros_before_after_pulse: int = 90
     """Number of zeros before and after the flux pulse to see the rising time. Default is 60ns"""
     z_pulse_amplitude: float = 0.1
     """Amplitude of the Z pulse to detune the qubit in frequency. Default is 0.1V"""

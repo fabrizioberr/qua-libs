@@ -59,7 +59,9 @@ def custom_param(node: QualibrationNode[Parameters, Quam]):
     # You can get type hinting in your IDE by typing node.parameters.
     node.parameters.qubits = ["qc2-3"]
     #increase averages
-    node.parameters.num_shots = 10000
+    node.parameters.num_shots = 1000
+    #length
+    node.parameters.zeros_before_after_pulse = 90
     #load
     #node.parameters.load_data_id = 1818
     pass
