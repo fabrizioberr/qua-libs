@@ -32,6 +32,7 @@ from qualibration_libs.parameters import get_qubits
 from qualibration_libs.runtime import simulate_and_plot
 from quam_config import Quam
 import matplotlib.pyplot as plt
+plt.style.use("sans_style_ppt")
 from scipy.optimize import curve_fit
 from scipy.signal import lfilter
 
@@ -65,7 +66,9 @@ node = QualibrationNode[ShortTimeCryoscopeParameters, Quam](
 def custom_param(node: QualibrationNode[ShortTimeCryoscopeParameters, Quam]):
     """Allow local parameter override when running directly in a Python IDE."""
     node.parameters.qubits = ["q3"]
-    node.parameters.num_shots = 2500
+    node.parameters.num_shots = 2000
+    iir_or_fir: Literal["iir", "fir"] = "fir"
+    #node.parameters.load_data_id = 2710
     pass
 
 
@@ -257,7 +260,7 @@ def analyse_data(node: QualibrationNode[ShortTimeCryoscopeParameters, Quam]):
         da_plot.sel(qubit=qubit.name).plot(ax=ax)
         ax.set_xlabel("Time (ns)")
         ax.set_ylabel(ylabel)
-        ax.set_title(f"{ylabel} vs time{title_suffix}")
+        ax.set_title(f"{ylabel} vs time – {qubit.name}{title_suffix}")
         node.results[key] = fig
         plt.show()
 
@@ -265,7 +268,7 @@ def analyse_data(node: QualibrationNode[ShortTimeCryoscopeParameters, Quam]):
     if node.parameters.iir_or_fir == "fir":
         existing_filter_length = (
             len(qubit.z.opx_output.feedforward_filter)
-            if qubit.z.opx_output.feedforward_filter is not None
+            if qubit.z.opx_output.feedforward_filter
             else None
         )
         M = existing_filter_length if existing_filter_length is not None else node.parameters.num_inverse_firs
@@ -286,6 +289,7 @@ def analyse_data(node: QualibrationNode[ShortTimeCryoscopeParameters, Quam]):
             lam_smooth=node.parameters.lam_smooth,
             method=node.parameters.method,
             verbose=True,
+            title_suffix=f"{qubit.name}{title_suffix}",
         )
 
         ideal_response = np.ones(len(da.values))
@@ -380,7 +384,7 @@ def update_state(node: QualibrationNode[ShortTimeCryoscopeParameters, Quam]):
                 continue
             if node.parameters.iir_or_fir == "fir":
                 inv_fir = np.array(node.results["fit_results"][qubit.name]["inverse_fir"])
-                if qubit.z.opx_output.feedforward_filter is None:
+                if not qubit.z.opx_output.feedforward_filter:
                     fir_list = inv_fir.tolist()
                 else:
                     inv_fir_old = np.array(qubit.z.opx_output.feedforward_filter)
